@@ -4,99 +4,160 @@ import cv2
 import numpy as np
 
 import pyautogui
-
+from mediapipe.python.solutions.drawing_utils import _normalized_to_pixel_coordinates
 import mediapipe as mp
 
 selected_color = None
+mp_drawing = mp.solutions.drawing_utils
+tracking_mode = "hand"
 
-tracking_mode = "hand"  # Default tracking mode
+# Default tracking mode
 
 mp_hands = mp.solutions.hands
 
-hands = mp_hands.Hands()
+hands = mp_hands.Hands( min_detection_confidence=0.7, min_tracking_confidence=0.7)
+hand_landmark_drawing_spec = mp_drawing.DrawingSpec(thickness=5, circle_radius=5)
+hand_connection_drawing_spec = mp_drawing.DrawingSpec(thickness=10, circle_radius=10)
 
+def get_idx_to_coordinates(image, results, VISIBILITY_THRESHOLD=0.5, PRESENCE_THRESHOLD=0.5):
+    idx_to_coordinates = {}
+    image_rows, image_cols, _ = image.shape
+    try:
+        for idx, landmark in enumerate(results.multi_hand_landmarks[0].landmark):
+            if ((landmark.HasField('visibility') and
+                 landmark.visibility < VISIBILITY_THRESHOLD) or
+                    (landmark.HasField('presence') and
+                     landmark.presence < PRESENCE_THRESHOLD)):
+                continue
+            landmark_px = _normalized_to_pixel_coordinates(landmark.x, landmark.y,
+                                                           image_cols, image_rows)
+            if landmark_px:
+                idx_to_coordinates[idx] = landmark_px
+    except:
+        pass
+    return idx_to_coordinates
 
 def mouse_callback(event, x, y, flags, param):
     global selected_color
 
     if event == cv2.EVENT_LBUTTONDOWN:
         selected_color = frame[y, x]
+        selected_color=selected_color[::-1]
 
         print("Selected Color:", selected_color)
 
 
-def detect_color(frame, target_color):
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+# def detect_color(frame, target_color):
+#     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+#
+#     lower_bound = np.array(target_color - np.array([10, 50, 50]))
+#
+#     upper_bound = np.array(target_color + np.array([10, 50, 50]))
+#
+#     mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
+#
+#     result = cv2.bitwise_and(frame, frame, mask=mask)
+#
+#     return result
 
-    lower_bound = np.array(target_color - np.array([10, 50, 50]))
+#
+# def get_mouse_position(frame, target_color, screen_width, screen_height):
+#     contours, _ = cv2.findContours(
+#
+#         detect_color(frame, target_color)[:, :, 0],
+#
+#         cv2.RETR_EXTERNAL,
+#
+#         cv2.CHAIN_APPROX_SIMPLE
+#
+#     )
+#
+#     if contours:
+#
+#         max_contour = max(contours, key=cv2.contourArea)
+#
+#         moments = cv2.moments(max_contour)
+#
+#         if moments["m00"] != 0:
+#             cx = int(moments["m10"] / moments["m00"])
+#
+#             cy = int(moments["m01"] / moments["m00"])
+#
+#             # Scale the finger position to screen dimensions
+#
+#             scaled_x = int(cx * screen_width / frame.shape[1])
+#
+#             scaled_y = int(cy * screen_height / frame.shape[0])
+#
+#             return scaled_x, scaled_y
+#
+#     return None
+#
+# def get_mouse_position(frame, target_color, screen_width, screen_height):
+#     hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+#
+#     lower_bound = np.array(target_color )
+#     upper_bound = np.array(target_color )
+#
+#     mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
+#
+#     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+#
+#     if contours:
+#         print(1)
+#         max_contour = max(contours, key=cv2.contourArea)
+#         moments = cv2.moments(max_contour)
+#         if moments["m00"] != 0:
+#             cx = int(moments["m10"] / moments["m00"])
+#             cy = int(moments["m01"] / moments["m00"])
+#             # Scale the finger position to screen dimensions
+#             scaled_x = int(cx * screen_width / frame.shape[1])
+#             scaled_y = int(cy * screen_height / frame.shape[0])
+#             return scaled_x, scaled_y
+#
+#     return [87,76]
 
-    upper_bound = np.array(target_color + np.array([10, 50, 50]))
 
-    mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
-
-    result = cv2.bitwise_and(frame, frame, mask=mask)
-
-    return result
-
-
-def get_mouse_position(frame, target_color, screen_width, screen_height):
-    contours, _ = cv2.findContours(
-
-        detect_color(frame, target_color)[:, :, 0],
-
-        cv2.RETR_EXTERNAL,
-
-        cv2.CHAIN_APPROX_SIMPLE
-
-    )
-
-    if contours:
-
-        max_contour = max(contours, key=cv2.contourArea)
-
-        moments = cv2.moments(max_contour)
-
-        if moments["m00"] != 0:
-            cx = int(moments["m10"] / moments["m00"])
-
-            cy = int(moments["m01"] / moments["m00"])
-
-            # Scale the finger position to screen dimensions
-
-            scaled_x = int(cx * screen_width / frame.shape[1])
-
-            scaled_y = int(cy * screen_height / frame.shape[0])
-
-            return scaled_x, scaled_y
-
-    return None
 
 
 def detect_hand(frame):
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
+    idx_to_coordinates=[]
     results = hands.process(frame_rgb)
-
+    frame_rgb.flags.writeable = True
+    image = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
     if results.multi_hand_landmarks:
-        hand_landmarks = results.multi_hand_landmarks[0]  # Assuming only one hand is detected
-
-        index_finger = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-
-        height, width, _ = frame.shape
-
-        index_finger_x = int(index_finger.x * width)
-
-        index_finger_y = int(index_finger.y * height)
-
-        return index_finger_x, index_finger_y
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(
+                image=image,
+                landmark_list=hand_landmarks,
+                connections=mp_hands.HAND_CONNECTIONS,
+                landmark_drawing_spec=hand_landmark_drawing_spec,
+                connection_drawing_spec=hand_connection_drawing_spec)
+            idx_to_coordinates = get_idx_to_coordinates(image, results)
+    if 8 in idx_to_coordinates:
+        print(idx_to_coordinates[8])
+        return idx_to_coordinates[8][0],idx_to_coordinates[8][1]
+    # if results.multi_hand_landmarks:
+        # hand_landmarks = results.multi_hand_landmarks[0]  # Assuming only one hand is detected
+        #
+        # index_finger = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        #
+        # height, width, _ = frame.shape
+        #
+        # index_finger_x = int(index_finger.x * width)
+        #
+        # index_finger_y = int(index_finger.y * height)
+        #
+        # return index_finger_x, index_finger_y
 
     return None
-
+# all fingers
 
 def main():
     global frame, tracking_mode, selected_color
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
 
@@ -119,6 +180,7 @@ def main():
     while selected_color is None:
 
         ret, frame = cap.read()
+        frame = cv2.flip(frame, 1)
 
         frame = cv2.resize(frame, (screen_width, screen_height))
 
@@ -129,12 +191,13 @@ def main():
     cv2.namedWindow("Object Detection", cv2.WND_PROP_FULLSCREEN)
 
     cv2.setWindowProperty("Object Detection", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
+    cv2.destroyAllWindows()
     print("Press 'h' for hand detection, 'l' for laser tracking, and 'q' to quit.")
 
     while True:
 
         ret, frame = cap.read()
+        frame = cv2.flip(frame, 1)
 
         frame = cv2.resize(frame, (screen_width, screen_height))
 
@@ -150,6 +213,7 @@ def main():
                 pyautogui.moveTo(index_finger_position[0], index_finger_position[1])
 
         elif tracking_mode == "laser":
+
 
             mouse_position = get_mouse_position(frame, selected_color, screen_width, screen_height)
 
